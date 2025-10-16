@@ -4,134 +4,43 @@ Next generation Peertube Addon for Kodi Mediacenter
 
 import os
 import sys
-from datetime import datetime, timedelta
-import json
-import posixpath
-from urllib.parse import urlencode, parse_qsl, urlsplit, unquote
+
 import requests
 
-import xbmcvfs
+from urllib.parse import urlencode, parse_qsl
+
 import xbmcgui
 import xbmcplugin
-from xbmcaddon import Addon
 from xbmcvfs import translatePath
+from xbmcaddon import Addon
+
+from resources.lib.xbmcpeertube import PTInstances, PTBookmarks
 
 URL = sys.argv[0]
 HANDLE = int(sys.argv[1])
+
 ADDON_PATH = translatePath(Addon().getAddonInfo("path"))
 IMAGE_DIR = os.path.join(ADDON_PATH, "resources", "images")
-ADDON_ID = "plugin.video.pt"
-USERDATA_PATH = f"special://userdata/addon_data/{ADDON_ID}/"
-FAVORITE = os.path.join(USERDATA_PATH, "favorites.json")
-CACHE = os.path.join(USERDATA_PATH, "cache")
+
+# TODO: in preference
+INDEX = "instances.joinpeertube.org"
+
+
+# xbmc.log(f"debug: pec", xbmc.LOGINFO)
 
 
 def get_url(**kwargs):
-    return "{}?{}".format(URL, urlencode(kwargs))
+    """
+    Format url
+    """
+    return f"{URL}?{urlencode(kwargs)}"
 
 
-def fetch_instances(filepath):
-    """Real instance fetching"""
-    request = requests.get(
-        "https://instances.joinpeertube.org/api/v1/instances/hosts?count=1000&start=0&sort=createdAt",
-        timeout=15,
-    )
+def list_channels(host):
+    """Return list of channels"""
+    request = requests.get(f"https://{host}/api/v1/video-channels", timeout=15)
     r = request.json()
-    r["date"] = datetime.now().strftime("%Y-%m-%d %H:%M")
-    try:
-        with xbmcvfs.File(filepath, "w") as instances_file:
-            instances_file.write(json.dumps(r, ensure_ascii=False, indent=4))
-    except:
-        xbmc.log("Could not write %s" % filepath, xbmc.LOGDEBUG)
-    return r
-
-
-def get_instances():
-    filename = "instances.json"
-    if not xbmcvfs.exists(USERDATA_PATH):
-        try:
-            xbmcvfs.mkdir(USERDATA_PATH)
-        except:
-            xbmc.log("Could not write %s" % USERDATA_PATH, xbmc.LOGDEBUG)
-    FILE_PATH = os.path.join(USERDATA_PATH, filename)
-    if not xbmcvfs.exists(FILE_PATH):
-        xbmc.log("No file, requesting new data!", xbmc.LOGDEBUG)
-        r = fetch_instances(FILE_PATH)
-    else:
-        with xbmcvfs.File(FILE_PATH) as instances_file:
-            r = json.load(instances_file)
-        t1 = datetime.strptime(r["date"], "%Y-%m-%d %H:%M")
-        t2 = datetime.now()
-        if t2 - t1 > timedelta(days=1):
-            r = fetch_instances(FILE_PATH)
     return r["data"]
-
-
-def list_instances():
-    xbmcplugin.setPluginCategory(HANDLE, "Peertube Servers")
-    xbmcplugin.setContent(HANDLE, "movies")
-    instances = get_instances()
-    for index, genre_info in enumerate(instances):
-        list_item = xbmcgui.ListItem(label=genre_info["host"])
-        info_tag = list_item.getVideoInfoTag()
-        info_tag.setMediaType("video")
-        info_tag.setTitle(genre_info["host"])
-        info_tag.setGenres([genre_info["host"]])
-        url = get_url(action="listing", host=genre_info["host"])
-        is_folder = True
-        xbmcplugin.addDirectoryItem(HANDLE, url, list_item, is_folder)
-    xbmcplugin.addSortMethod(HANDLE, xbmcplugin.SORT_METHOD_LABEL_IGNORE_THE)
-    xbmcplugin.endOfDirectory(HANDLE)
-
-
-def get_image(url):
-    """Cache image and return local path"""
-    if not xbmcvfs.exists(CACHE):
-        try:
-            xbmcvfs.mkdir(CACHE)
-        except:
-            xbmc.log("Could not write %s" % CACHE, xbmc.LOGDEBUG)
-    urlpath = urlsplit(url).path
-    logo_filename = posixpath.basename(unquote(urlpath))
-    image = os.path.join(CACHE, logo_filename)
-    if not xbmcvfs.exists(image):
-        # download
-        response = requests.get(url, timeout=15)
-        with xbmcvfs.File(image, "wb") as file:
-            file.write(response.content)
-    return image
-
-
-def get_host_info(host):
-    """Get metadata about host : description, logo"""
-    request = requests.get(f"https://{host}/api/v1/config", timeout=15)
-    r = request.json()
-    host_info = {}
-    attributes = [
-        "name",
-        "shortDescription",
-        "isNSFW",
-        "serverCountry",
-        "defaultLanguage",
-    ]
-    for attribute in attributes:
-        if attribute in r["instance"]:
-            host_info[attribute] = r["instance"][attribute]
-    if "logo" in r["instance"]:
-        logos = sorted(r["instance"]["logo"], key=lambda x: x["height"], reverse=True)
-        logo_url = logos[0]["fileUrl"]
-        host_info["logo_url"] = logo_url
-        host_info["logo_path"] = get_image(logo_url)
-    elif "avatars" in r["instance"]:
-        if r["instance"]["avatars"]:
-            avatars = sorted(
-                r["instance"]["avatars"], key=lambda x: x["width"], reverse=True
-            )
-            avatar_url = avatars[0]["fileUrl"]
-            host_info["logo_url"] = avatar_url
-            host_info["logo_path"] = get_image(avatar_url)
-
-    return host_info
 
 
 def get_videos(host):
@@ -143,7 +52,7 @@ def get_videos(host):
 def generate_item_info(
     self,
     name,
-    url,
+    uSrl,
     is_folder=True,
     thumbnail="",
     aired="",
@@ -161,26 +70,9 @@ def generate_item_info(
     }
 
 
-def bookmark_host(host):
-    """Add host to favorite instances"""
-    data = {}
-    if xbmcvfs.exists(FAVORITE):
-        with xbmcvfs.File(FAVORITE, "r") as favorite:
-            try:
-                data = json.load(favorite)
-            except:
-                data = {}
-    if "instances" not in data:
-        data["instances"] = {}
-    if host not in data["instances"]:
-        host_info = get_host_info(host)
-        data["instances"][host] = host_info
-    try:
-        with xbmcvfs.File(FAVORITE, "w") as favorite:
-            favorite.write(json.dumps(data, ensure_ascii=False, indent=4))
-    except:
-        xbmc.log("Could not write %s" % FAVORITE, xbmc.LOGDEBUG)
+def list_videos(host):
     genre_info = get_videos(host)
+    # xbmc.log(f"genre_info: {genre_info}", xbmc.LOGINFO)
     xbmcplugin.setPluginCategory(HANDLE, "Videos")
     xbmcplugin.setContent(HANDLE, "movies")
     videos = genre_info
@@ -199,11 +91,8 @@ def bookmark_host(host):
 
 
 def get_video(host, id):
-    xbmc.log("host is %s" % host, xbmc.LOGDEBUG)
-    xbmc.log("id is %s" % id, xbmc.LOGDEBUG)
-    request = requests.get("https://%s/api/v1/videos/%d" % (host, id))
+    request = requests.get(f"https://{host}/api/v1/videos/{id}", timeout=15)
     r = request.json()
-    xbmc.log("request is %s" % r, xbmc.LOGDEBUG)
     return r["streamingPlaylists"][0]["playlistUrl"]
 
 
@@ -213,61 +102,24 @@ def play_video(path):
     xbmcplugin.setResolvedUrl(HANDLE, True, listitem=play_item)
 
 
-def delete_instance(host):
-    """Remove instance from favorite"""
-    with xbmcvfs.File(FAVORITE, "r") as favorite:
-        try:
-            data = json.load(favorite)
-        except Exception as e:
-            xbmc.log(f"Could not read {FAVORITE} beacause {e}", xbmc.LOGDEBUG)
-            data = {}
-    if host in data["instances"]:
-        data["instances"].pop(host)
-    try:
-        with xbmcvfs.File(FAVORITE, "w") as favorite:
-            favorite.write(json.dumps(data, ensure_ascii=False, indent=4))
-    except Exception as e:
-        xbmc.log(f"Could not write {FAVORITE} because {e}", xbmc.LOGDEBUG)
-
-
 def home():
     """Homepage"""
     xbmcplugin.setPluginCategory(HANDLE, "Peertube")
-    xbmcplugin.setContent(HANDLE, "movies")
+    xbmcplugin.setContent(HANDLE, "files")
 
+    fav = PTBookmarks(handle=HANDLE)
+    fav.list_hosts()
+
+    instances = PTInstances(handle=HANDLE, index=INDEX)
     url = get_url(action="instances")
     list_item = xbmcgui.ListItem("Instances from joinpeertube.org")
     list_item.setArt({"icon": f"{IMAGE_DIR}/icon.png"})
-    list_item.setInfo("video", {"plot": "Find instance on joinpeertube.org"})
+    info_tag = list_item.getVideoInfoTag()
+    plot = "Find instance from joinpeertube.org index\n\r\n\r\n\r"
+    plot += f"Last update: {instances.date()}"
+    info_tag.setPlot(plot)
     is_folder = True
     xbmcplugin.addDirectoryItem(HANDLE, url, list_item, is_folder)
-
-    if xbmcvfs.exists(FAVORITE):
-        with xbmcvfs.File(FAVORITE, "r") as favorite:
-            try:
-                data = json.load(favorite)
-            except:
-                data = {}
-            if "instances" in data:
-                for instance, metadata in data["instances"].items():
-                    list_item = xbmcgui.ListItem(metadata["name"])
-                    if "logo_path" in metadata:
-                        list_item.setArt({"icon": metadata["logo_path"]})
-                    elif xbmcvfs.exists(os.path.join(USERDATA_PATH, f"{instance}.png")):
-                        list_item.setArt(
-                            {"icon": os.path.join(USERDATA_PATH, f"{instance}.png")}
-                        )
-                    else:
-                        list_item.setArt({"icon": f"{IMAGE_DIR}/icon.png"})
-
-                    list_item.setInfo("video", {"plot": metadata["shortDescription"]})
-                    url_delete = get_url(action="delete", host=instance)
-                    list_item.addContextMenuItems(
-                        [("Delete", f"Container.Update({url_delete})")]
-                    )
-                    is_folder = True
-                    url = get_url(action="listing", host=instance)
-                    xbmcplugin.addDirectoryItem(HANDLE, url, list_item, is_folder)
 
     xbmcplugin.endOfDirectory(HANDLE)
 
@@ -277,16 +129,27 @@ def router(paramstring):
     if not params:
         home()
     elif params["action"] == "instances":
-        list_instances()
+        instances = PTInstances(handle=HANDLE, index=INDEX)
+        xbmcplugin.setPluginCategory(HANDLE, "Peertube Servers")
+        xbmcplugin.setContent(HANDLE, "files")
+        instances.list_instances(instances.data)
+        # xbmcplugin.addSortMethod(HANDLE, xbmcplugin.SORT_METHOD_LABEL_IGNORE_THE)
+        xbmcplugin.SORT_METHOD_UNSORTED
+        xbmcplugin.endOfDirectory(HANDLE)
 
     elif params["action"] == "delete":
-        delete_instance(params["host"])
+        fav = PTBookmarks(handle=HANDLE)
+        host = params["host"]
+        fav.del_host(host)
         home()
 
     elif params["action"] == "listing":
-        host = params["host"]
-        bookmark_host(host)
-        list_videos(host)
+        instances = PTInstances(handle=HANDLE, index=INDEX)
+        host = {}
+        host = instances.hostinfo(params["host"])
+        fav = PTBookmarks(handle=HANDLE)
+        fav.add_host(host)
+        list_videos(params["host"])
 
     elif params["action"] == "play":
         play_video(params["video"])
