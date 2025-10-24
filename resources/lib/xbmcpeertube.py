@@ -6,10 +6,12 @@ Librairy for Peertube and Kodi
 
 import os
 from datetime import datetime, timedelta
-from urllib.parse import urlsplit, urlencode
+from urllib.parse import urlencode, urlsplit, unquote
 import json
+import posixpath
 import requests
 
+import xbmc
 import xbmcvfs
 import xbmcgui
 import xbmcplugin
@@ -29,81 +31,32 @@ FAVORITES = os.path.join(USERDATA_PATH, "favorites.json")
 CACHE = os.path.join(USERDATA_PATH, "cache")
 
 
-class PTInstances:
+def get_url(**kwargs):
     """
-    Manage Instances from Kodi
+    Format url
+    """
+    return f"{URL}?{urlencode(kwargs)}"
+
+
+class PTI:
+    """
+    Base class for instances in xbmc
     """
 
-    def __init__(self, handle, index=None):
-        self.index = index
-        self.handle = handle
-        self.data = {}
-        if xbmcvfs.exists(INSTANCES):
-            with xbmcvfs.File(INSTANCES, "r") as instances_file:
-                self.data = json.load(instances_file)
-            t1 = datetime.strptime(self.data["date"], "%Y-%m-%d %H:%M")
-            t2 = datetime.now()
-            if t2 - t1 > timedelta(days=28):
-                self.update()
-        else:
-            self.update()
-
-    def get_url(self, **kwargs):
-        """
-        Format url
-        """
-        return f"{URL}?{urlencode(kwargs)}"
-
-    def date(self):
-        """
-        Get last update date
-        """
-        date = None
-        if self.data:
-            if "date" in self.data:
-                date = self.data["date"]
-        return date
-
-    def update(self):
-        """
-        Update instances.json
-        """
-        if self.index:
-            instances = Instances(index)
-            self.data = instances.fetch_instances()
-            self.save_cache_file(INSTANCES, self.data)
-        else:
-            xbmc.log("No update without index file", xbmc.LOGINFO)
-
-    def save_cache_file(self, cache_file, data):
-        """
-        Save to file
-        """
-        if not xbmcvfs.exists(USERDATA_PATH):
-            try:
-                xbmcvfs.mkdir(USERDATA_PATH)
-            except:
-                xbmc.log(f"Could not write {USERDATA_PATH}", xbmc.LOGINFO)
-        try:
-            with xbmcvfs.File(cache_file, "w") as instances_file:
-                instances_file.write(json.dumps(data, ensure_ascii=False, indent=4))
-                return True
-        except:
-            xbmc.log(f"Could not write {filepath}", xbmc.LOGINFO)
-            return False
-
-    def list_instances(self, data=None):
+    def list_item_instances(self, data=None, handle=None):
         """
         XBMC instance listing
         """
+        # TODO: add isNSFW check, need extension preferences
+
         if not data:
-            data = self.data
-        for host in data["data"]:
+            data = []
+        for host in data:
             list_item = xbmcgui.ListItem(label=host["host"])
             list_item.setLabel(host["host"])
             list_item.setIsFolder(True)
             if "fav" in host:
-                url_delete = self.get_url(action="delete", host=host["host"])
+                url_delete = get_url(action="delete", host=host["host"])
                 list_item.addContextMenuItems(
                     [("Delete", f"Container.Update({url_delete})")]
                 )
@@ -130,8 +83,66 @@ class PTInstances:
             plot += f"\n\rVersion: {host["version"]}"
             info_tag.setPlot(plot)
             info_tag.setSortTitle(str(host["id"]))
-            url = self.get_url(action="listing", host=host["host"])
-            xbmcplugin.addDirectoryItem(self.handle, url, list_item, isFolder=True)
+            url = get_url(action="listing", host=host["host"])
+            xbmcplugin.addDirectoryItem(handle, url, list_item, isFolder=True)
+
+
+class PTInstances(PTI):
+    """
+    Manage Instances from Kodi
+    """
+
+    def __init__(self, handle, index=None):
+        self.index = index
+        self.handle = handle
+        self.data = {}
+        if xbmcvfs.exists(INSTANCES):
+            with xbmcvfs.File(INSTANCES, "r") as instances_file:
+                self.data = json.load(instances_file)
+            t1 = datetime.strptime(self.data["date"], "%Y-%m-%d %H:%M")
+            t2 = datetime.now()
+            if t2 - t1 > timedelta(days=28):
+                self.update()
+        else:
+            self.update()
+
+    def date(self):
+        """
+        Get last update date
+        """
+        date = None
+        if self.data:
+            if "date" in self.data:
+                date = self.data["date"]
+        return date
+
+    def update(self):
+        """
+        Update instances.json
+        """
+        if self.index:
+            instances = Instances(self.index)
+            self.data = instances.fetch_instances()
+            self.save_cache_file(INSTANCES, self.data)
+        else:
+            xbmc.log("No update without index file", xbmc.LOGINFO)
+
+    def save_cache_file(self, cache_file, data):
+        """
+        Save to file
+        """
+        if not xbmcvfs.exists(USERDATA_PATH):
+            try:
+                xbmcvfs.mkdir(USERDATA_PATH)
+            except:
+                xbmc.log(f"Could not write {USERDATA_PATH}", xbmc.LOGINFO)
+        try:
+            with xbmcvfs.File(cache_file, "w") as instances_file:
+                instances_file.write(json.dumps(data, ensure_ascii=False, indent=4))
+                return True
+        except:
+            xbmc.log(f"Could not write {filepath}", xbmc.LOGINFO)
+            return False
 
     def hostinfo(self, host):
         """
@@ -148,7 +159,7 @@ class PTInstances:
         return hinfo
 
 
-class PTBookmarks:
+class PTBookmarks(PTI):
     """
     Manage Favorites
     """
@@ -199,36 +210,43 @@ class PTBookmarks:
 
     def add_host(self, host):
         """Add host to favorite"""
-        if "host" not in self.data:
-            self.data["host"] = {}
-        address = host["host"]
-        if address not in self.data["host"]:
-            self.data["host"][address] = self.get_image(host)
-        self.data["host"][address]["fav"] = True
-        try:
-            with xbmcvfs.File(FAVORITES, "w") as favorite:
-                favorite.write(json.dumps(self.data, ensure_ascii=False, indent=4))
-        except Exception as e:
-            xbmc.log(f"Could not write {FAVORITES} cause {e}", xbmc.LOGINFO)
+        if "host" in host:
+            isin = next(
+                filter(lambda x: x["host"] == host["host"], self.data["hosts"]), None
+            )
+        else:
+            isin = next(filter(lambda x: x["host"] == host, self.data["hosts"]), None)
+        if not isin:  # address not in self.data["host"]:
+            host = self.get_image(host)
+            host["fav"] = True
+            self.data["hosts"].insert(0, host)
+            try:
+                with xbmcvfs.File(FAVORITES, "w") as favorite:
+                    favorite.write(json.dumps(self.data, ensure_ascii=False, indent=4))
+            except Exception as e:
+                xbmc.log(f"Could not write {FAVORITES} cause {e}", xbmc.LOGINFO)
 
     def del_host(self, host):
         """Remove instance from favorite"""
-        if host in self.data["host"]:
-            self.data["host"].pop(host)
-        try:
-            with xbmcvfs.File(FAVORITES, "w") as favorite:
-                favorite.write(json.dumps(self.data, ensure_ascii=False, indent=4))
-        except:
-            xbmc.log(f"Could not write {FAVORITES}", xbmc.LOGINFO)
+        if "host" in host:
+            isin = next(
+                filter(lambda x: x["host"] == host["host"], self.data["hosts"]), None
+            )
+        else:
+            isin = next(filter(lambda x: x["host"] == host, self.data["hosts"]), None)
+        if isin:
+            self.data["hosts"][:] = [
+                d for d in self.data["hosts"] if d.get("host") != host
+            ]
+            try:
+                with xbmcvfs.File(FAVORITES, "w") as favorite:
+                    favorite.write(json.dumps(self.data, ensure_ascii=False, indent=4))
+            except:
+                xbmc.log(f"Could not write {FAVORITES}", xbmc.LOGINFO)
 
     def list_hosts(self):
         """
         List Item host for Kodi
         """
-        # TODO: add isNSFW check, need extension preferences
-        if "host" in self.data:
-            data = {"data": []}
-            ptinstances = PTInstances(handle=self.handle)
-            for hostname, host in self.data["host"].items():
-                data["data"].append(host)
-            ptinstances.list_instances(data)
+        if "hosts" in self.data:
+            self.list_item_instances(data=self.data["hosts"], handle=self.handle)

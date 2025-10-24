@@ -7,14 +7,14 @@ import sys
 
 import requests
 
-from urllib.parse import urlencode, parse_qsl
+from urllib.parse import parse_qsl
 
 import xbmcgui
 import xbmcplugin
 from xbmcvfs import translatePath
 from xbmcaddon import Addon
 
-from resources.lib.xbmcpeertube import PTInstances, PTBookmarks
+from resources.lib.xbmcpeertube import PTInstances, PTBookmarks, get_url
 
 URL = sys.argv[0]
 HANDLE = int(sys.argv[1])
@@ -27,13 +27,6 @@ INDEX = "instances.joinpeertube.org"
 
 
 # xbmc.log(f"debug: pec", xbmc.LOGINFO)
-
-
-def get_url(**kwargs):
-    """
-    Format url
-    """
-    return f"{URL}?{urlencode(kwargs)}"
 
 
 def list_channels(host):
@@ -132,8 +125,7 @@ def router(paramstring):
         instances = PTInstances(handle=HANDLE, index=INDEX)
         xbmcplugin.setPluginCategory(HANDLE, "Peertube Servers")
         xbmcplugin.setContent(HANDLE, "files")
-        instances.list_instances(instances.data)
-        # xbmcplugin.addSortMethod(HANDLE, xbmcplugin.SORT_METHOD_LABEL_IGNORE_THE)
+        instances.list_item_instances(data=instances.data["data"], handle=HANDLE)
         xbmcplugin.SORT_METHOD_UNSORTED
         xbmcplugin.endOfDirectory(HANDLE)
 
@@ -141,14 +133,13 @@ def router(paramstring):
         fav = PTBookmarks(handle=HANDLE)
         host = params["host"]
         fav.del_host(host)
-        home()
 
     elif params["action"] == "listing":
         instances = PTInstances(handle=HANDLE, index=INDEX)
-        host = {}
-        host = instances.hostinfo(params["host"])
+        host_info = {}
+        host_info = instances.hostinfo(params["host"])
         fav = PTBookmarks(handle=HANDLE)
-        fav.add_host(host)
+        fav.add_host(host_info)
         list_videos(params["host"])
 
     elif params["action"] == "play":
