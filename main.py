@@ -5,7 +5,6 @@ Next generation Peertube Addon for Kodi Mediacenter
 import os
 import sys
 
-import requests
 
 from urllib.parse import parse_qsl
 
@@ -15,6 +14,9 @@ from xbmcvfs import translatePath
 from xbmcaddon import Addon
 
 from resources.lib.xbmcpeertube import PTInstances, PTBookmarks, get_url
+
+# TODO: RM
+from resources.lib.peertube import Host
 
 URL = sys.argv[0]
 HANDLE = int(sys.argv[1])
@@ -27,19 +29,6 @@ INDEX = "instances.joinpeertube.org"
 
 
 # xbmc.log(f"debug: pec", xbmc.LOGINFO)
-
-
-def list_channels(host):
-    """Return list of channels"""
-    request = requests.get(f"https://{host}/api/v1/video-channels", timeout=15)
-    r = request.json()
-    return r["data"]
-
-
-def get_videos(host):
-    request = requests.get(f"https://{host}/api/v1/videos?isLocal=true", timeout=15)
-    r = request.json()
-    return r["data"]
 
 
 def generate_item_info(
@@ -64,29 +53,25 @@ def generate_item_info(
 
 
 def list_videos(host):
-    genre_info = get_videos(host)
-    # xbmc.log(f"genre_info: {genre_info}", xbmc.LOGINFO)
+    pt = Host(host)
+    videos = pt.list_videos()
     xbmcplugin.setPluginCategory(HANDLE, "Videos")
     xbmcplugin.setContent(HANDLE, "movies")
-    videos = genre_info
     for video in videos:
         list_item = xbmcgui.ListItem(label=video["name"])
         info_tag = list_item.getVideoInfoTag()
         info_tag.setMediaType("movie")
         info_tag.setTitle(video["name"])
         list_item.setProperty("IsPlayable", "true")
-        url = get_url(action="play", video=get_video(host, video["id"]))
+        video_info = pt.video_info(video["id"])
+        url = get_url(
+            action="play", video=video_info["streamingPlaylists"][0]["playlistUrl"]
+        )
         is_folder = False
         xbmcplugin.addDirectoryItem(HANDLE, url, list_item, is_folder)
     xbmcplugin.addSortMethod(HANDLE, xbmcplugin.SORT_METHOD_LABEL_IGNORE_THE)
     xbmcplugin.addSortMethod(HANDLE, xbmcplugin.SORT_METHOD_VIDEO_YEAR)
     xbmcplugin.endOfDirectory(HANDLE)
-
-
-def get_video(host, id):
-    request = requests.get(f"https://{host}/api/v1/videos/{id}", timeout=15)
-    r = request.json()
-    return r["streamingPlaylists"][0]["playlistUrl"]
 
 
 def play_video(path):
