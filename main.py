@@ -110,6 +110,8 @@ def home():
     info_tag = list_item.getVideoInfoTag()
     plot = "Find instance from joinpeertube.org index\n\r\n\r\n\r"
     plot += f"Last update: {instances.date()}"
+    url_refresh = get_url(action="refresh_instances")
+    list_item.addContextMenuItems([("Update", f"Container.Update({url_refresh})")])
     info_tag.setPlot(plot)
     is_folder = True
     xbmcplugin.addDirectoryItem(HANDLE, url, list_item, is_folder)
@@ -119,8 +121,10 @@ def home():
 
 def router(paramstring):
     params = dict(parse_qsl(paramstring))
+
     if not params:
         home()
+
     elif params["action"] == "instances":
         instances = PTInstances(handle=HANDLE, index=INDEX)
         xbmcplugin.setPluginCategory(HANDLE, "Peertube Servers")
@@ -128,11 +132,6 @@ def router(paramstring):
         instances.list_item_instances(data=instances.data["data"], handle=HANDLE)
         xbmcplugin.SORT_METHOD_UNSORTED
         xbmcplugin.endOfDirectory(HANDLE)
-
-    elif params["action"] == "delete":
-        fav = PTBookmarks(handle=HANDLE)
-        host = params["host"]
-        fav.del_host(host)
 
     elif params["action"] == "listing":
         instances = PTInstances(handle=HANDLE, index=INDEX)
@@ -144,6 +143,16 @@ def router(paramstring):
 
     elif params["action"] == "play":
         play_video(params["video"])
+
+    elif params["action"] == "delete":
+        fav = PTBookmarks(handle=HANDLE)
+        host = params["host"]
+        fav.del_host(host)
+
+    elif params["action"] == "refresh_instances":
+        instances = PTInstances(handle=HANDLE, index=INDEX)
+        instances.update()
+
     else:
         raise ValueError(f"Invalid paramstring: {paramstring}!")
 
