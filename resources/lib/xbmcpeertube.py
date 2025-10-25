@@ -173,6 +173,8 @@ class PTBookmarks(PTI):
                     self.data = json.load(favorite)
                 except:
                     self.data = {}
+        else:
+            self.data = {"hosts": []}
 
     def fetch_image(self, url):
         """Cache image and return local path"""
@@ -211,12 +213,12 @@ class PTBookmarks(PTI):
     def add_host(self, host):
         """Add host to favorite"""
         if "host" in host:
-            isin = next(
-                filter(lambda x: x["host"] == host["host"], self.data["hosts"]), None
-            )
+            search = host["host"]
         else:
-            isin = next(filter(lambda x: x["host"] == host, self.data["hosts"]), None)
-        if not isin:  # address not in self.data["host"]:
+            # TODO: force update info ?
+            search = host
+        isin = next(filter(lambda x: x["host"] == search, self.data["hosts"]), None)
+        if not isin:
             host = self.get_image(host)
             host["fav"] = True
             self.data["hosts"].insert(0, host)
@@ -229,11 +231,10 @@ class PTBookmarks(PTI):
     def del_host(self, host):
         """Remove instance from favorite"""
         if "host" in host:
-            isin = next(
-                filter(lambda x: x["host"] == host["host"], self.data["hosts"]), None
-            )
+            search = host["host"]
         else:
-            isin = next(filter(lambda x: x["host"] == host, self.data["hosts"]), None)
+            search = host
+        isin = next(filter(lambda x: x["host"] == host, self.data["hosts"]), None)
         if isin:
             self.data["hosts"][:] = [
                 d for d in self.data["hosts"] if d.get("host") != host
