@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <addon id="plugin.video.pt"
-version="0.1.9"
+version="0.2.0"
 name="Next Gen Peertube Addon"
-provider-name="Haui111">
+provider-name="Haui111, rimeno">
 <requires>
   <import addon="xbmc.python" version="3.0.1"/>
   <import addon="script.module.addon.signals" version="0.0.6"/>
@@ -15,6 +15,12 @@ provider-name="Haui111">
   <summary lang="en_GB">Next Gen Peertube Addon</summary>
   <description lang="en_GB">In lieu of a working peertube addon, I've decided to make a new one.</description>
   <disclaimer lang="en_GB">Feel free to build and improve on this addon.</disclaimer>
+  <news>v0.2.0
+  - Added history
+  - Added cache
+  - Added instance image and description
+  - Added video image and description
+  </news>
   <license>GPL-3.0-only</license>
   <source>https://github.com/Haui1112/plugin.video.pt</source>
   <assets>
