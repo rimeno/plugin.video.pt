@@ -76,8 +76,22 @@ def router(paramstring):
 
     elif params["action"] == "listing":
         host = params["host"]
-        pt_host = PTHost(handle=HANDLE, host=host)
-        pt_host.list_videos()
+        if "count" in params:
+            count = params["count"]
+        else:
+            count = 15
+        if "start" in params:
+            start = params["start"]
+        else:
+            start = 0
+        pt_host = PTHost(
+            handle=HANDLE,
+            host=host,
+        )
+        pt_host.list_videos(
+            count=count,
+            start=start,
+        )
 
     elif params["action"] == "play":
         play_video(params["video"])

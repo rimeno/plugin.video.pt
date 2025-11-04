@@ -39,16 +39,11 @@ def get_url(**kwargs):
 
 
 class PT:
-    """
-    Base class for instances in xbmc
-    """
+    """Base class for instances in xbmc"""
 
     def list_item_instances(self, data=None, handle=None, history=False):
-        """
-        XBMC instance listing
-        """
-        # TODO: add isNSFW check, need extension preferences
-
+        """XBMC instance listing"""
+        # TODO: add isNSFW check from preferences
         if not data:
             data = []
         for host in data:
@@ -56,11 +51,12 @@ class PT:
             list_item.setLabel(host["host"])
             list_item.setIsFolder(True)
             if history:
+                # Add delete button
                 url_delete = get_url(action="delete", host=host["host"])
                 list_item.addContextMenuItems(
                     [("Delete", f"Container.Update({url_delete})")]
                 )
-            if "logo_path" in host:
+            if "logo_path" in host and host["logo_path"] != None:
                 logo_path = host["logo_path"]
             else:
                 logo_path = f"{IMAGE_DIR}/icon.png"
@@ -101,9 +97,7 @@ class PT:
 
 
 class PTInstances(PT):
-    """
-    Manage Instances from Kodi
-    """
+    """Manage Instances from Kodi"""
 
     def __init__(self, handle, index, refresh=False):
         self.handle = handle
@@ -121,14 +115,13 @@ class PTInstances(PT):
             self.data = self.update(index)
 
     def __del__(self):
+        """Save"""
         if "updated" in self.data:
             self.data.pop("updated")
             self.save_cache_file(INSTANCES, self.data)
 
     def update(self, index=None):
-        """
-        Update instances.json
-        """
+        """Update instances.json"""
         if not index:
             xbmc.log("Missing index", xbmc.LOGINFO)
             return None
@@ -139,27 +132,11 @@ class PTInstances(PT):
         data["updated"] = "yes"
         return data
 
-    def hostinfo(self, host):
-        """
-        Return hostinfo from cache
-        """
-        hinfo = None
-        if xbmcvfs.exists(INSTANCES):
-            with xbmcvfs.File(INSTANCES, "r") as instances_file:
-                self.data = json.load(instances_file)
-            if self.data:
-                hinfo = next(
-                    filter(lambda x: x["host"] == host, self.data["data"]), None
-                )
-        return hinfo
-
 
 class PTHistory(PT):
-    """
-    Manage History
-    """
+    """Manage History"""
 
-    def __init__(self, handle=None):
+    def __init__(self):
         self.data = {}
         if xbmcvfs.exists(HISTORY):
             with xbmcvfs.File(HISTORY, "r") as history:
@@ -171,6 +148,7 @@ class PTHistory(PT):
             self.data = {"hosts": []}
 
     def __del__(self):
+        """Save"""
         self.save_cache_file(HISTORY, self.data)
 
     def search(self, host):
@@ -183,6 +161,7 @@ class PTHistory(PT):
         return isin
 
     def update_history(self, host):
+        """Update history"""
         self.del_host(host)
         self.add_host(host)
 
@@ -205,9 +184,7 @@ class PTHistory(PT):
 
 
 class PTHost(PT):
-    """
-    Manage host content
-    """
+    """Manage host content"""
 
     def __init__(self, handle, host):
         self.handle = handle
@@ -218,6 +195,7 @@ class PTHost(PT):
         if isin_history:
             last = datetime.strptime(isin_history["date"], "%Y-%m-%d %H:%M")
             now = datetime.now()
+            # TODO: set refresh rate in settings
             if now - last > timedelta(hours=3):
                 self.data = self.host.info()
             else:
@@ -227,6 +205,7 @@ class PTHost(PT):
             self.data["logo_path"] = self.get_host_image(self.data)
 
     def __del__(self):
+        """Save"""
         pt_history = PTHistory()
         pt_history.update_history(self.data)
 
@@ -254,21 +233,21 @@ class PTHost(PT):
             avatar_url = avatars[0]["fileUrl"]
             host_image = self.fetch_image(avatar_url)
         elif xbmcvfs.exists(os.path.join(USERDATA_PATH, f"{host["host"]}.png")):
+            # TODO: add menu to import file
             host_image = os.path.join(USERDATA_PATH, f"{host["host"]}.png")
         else:
-            host_image = f"{IMAGE_DIR}/icon.png"
+            host_image = None
         return host_image
 
-    def list_videos(self):
-        """List videos"""
-        videos = self.host.list_videos()
+    def list_videos(self, count=15, start=0, sort="-publishedAt"):
+        """List videos as an xbmc directory"""
+        videos = self.host.list_videos(count, start, sort)
         xbmcplugin.setContent(self.handle, "files")
         for video in videos:
             is_folder = False
             video_info = self.host.video_info(video["id"])
             list_item = xbmcgui.ListItem(label=video["name"])
             list_item.setLabel(video["name"])
-            list_item.setIsFolder(True)
             preview_path = self.fetch_image(
                 f"https://{self.host.host}{video["previewPath"]}"
             )
@@ -284,6 +263,16 @@ class PTHost(PT):
             list_item.setDateTime(video["publishedAt"])
             url = get_url(
                 action="play", video=video_info["streamingPlaylists"][0]["playlistUrl"]
+            )
+            xbmcplugin.addDirectoryItem(self.handle, url, list_item, is_folder)
+
+        # TODO: translate
+        new_start = int(count) + int(start)
+        if int(self.data["totalLocalVideos"]) > new_start:
+            is_folder = True
+            list_item = xbmcgui.ListItem(label="Next Page")
+            url = get_url(
+                action="listing", host=self.data["host"], count=count, start=new_start
             )
             xbmcplugin.addDirectoryItem(self.handle, url, list_item, is_folder)
 
