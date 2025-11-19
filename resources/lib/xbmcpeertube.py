@@ -171,9 +171,14 @@ class PTHistory(PT):
 
     def del_host(self, host):
         """Remove host from history"""
-        self.data["hosts"][:] = [
-            d for d in self.data["hosts"] if d.get("host") != host["host"]
-        ]
+        if isinstance(host, dict):
+            self.data["hosts"][:] = [
+                d for d in self.data["hosts"] if d.get("host") != host["host"]
+            ]
+        else:
+            self.data["hosts"][:] = [
+                d for d in self.data["hosts"] if d.get("host") != host
+            ]
 
     def list_hosts(self, handle):
         """List Item host for Kodi"""

@@ -98,7 +98,7 @@ def router(paramstring):
 
     elif params["action"] == "delete":
         host = params["host"]
-        pt_history = PTHistory(handle=HANDLE)
+        pt_history = PTHistory()
         pt_history.del_host(host)
 
     elif params["action"] == "refresh_instances":
