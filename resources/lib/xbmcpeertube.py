@@ -203,6 +203,7 @@ class PTHost(PT):
             # TODO: set refresh rate in settings
             if now - last > timedelta(hours=3):
                 self.data = self.host.info()
+                self.data["logo_path"] = self.get_host_image(self.data)
             else:
                 self.data = isin_history
         else:
